@@ -41,6 +41,7 @@ export function usePoseDetection({
   const plankLostCountRef = useRef(0);
   const isPlankActiveRef = useRef(false);
   const lastDetectionTimeRef = useRef(0);
+  const lastResultRef = useRef<any>(null); // Store last result for cleanup
 
   // Initialize MediaPipe Pose
   useEffect(() => {
@@ -89,8 +90,19 @@ export function usePoseDetection({
 
     return () => {
       mounted = false;
+
+      // Clean up last result
+      if (lastResultRef.current) {
+        lastResultRef.current = null;
+      }
+
+      // Close and dispose MediaPipe instance
       if (poseLandmarkerRef.current) {
-        poseLandmarkerRef.current.close();
+        try {
+          poseLandmarkerRef.current.close();
+        } catch (err) {
+          console.warn('Error closing pose landmarker:', err);
+        }
         poseLandmarkerRef.current = null;
       }
     };
@@ -107,8 +119,17 @@ export function usePoseDetection({
       if (now - lastDetectionTimeRef.current < 100) return;
       lastDetectionTimeRef.current = now;
 
+      // Clean up previous result to prevent memory accumulation
+      if (lastResultRef.current) {
+        // MediaPipe results hold internal buffers that need to be released
+        lastResultRef.current = null;
+      }
+
       // Detect pose landmarks
       const result = poseLandmarkerRef.current.detectForVideo(video, now);
+
+      // Store reference for cleanup on next iteration
+      lastResultRef.current = result;
 
       if (result.landmarks && result.landmarks.length > 0) {
         // Get first person's landmarks
@@ -186,6 +207,13 @@ export function usePoseDetection({
     plankDetectedCountRef.current = 0;
     plankLostCountRef.current = 0;
     isPlankActiveRef.current = false;
+    lastDetectionTimeRef.current = 0;
+
+    // Clean up last result
+    if (lastResultRef.current) {
+      lastResultRef.current = null;
+    }
+
     setDetectionResult(null);
     setError(null);
   }, []);

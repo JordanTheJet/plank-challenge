@@ -364,6 +364,31 @@ export function detectPlankPosition(landmarks: NormalizedLandmark[]): PlankDetec
  * Draw pose skeleton on canvas
  * Shows body landmarks and connections for visual feedback
  */
+// Define connections once to avoid recreating on every frame
+const POSE_CONNECTIONS = [
+  // Torso
+  [POSE_LANDMARKS.LEFT_SHOULDER, POSE_LANDMARKS.RIGHT_SHOULDER],
+  [POSE_LANDMARKS.LEFT_SHOULDER, POSE_LANDMARKS.LEFT_HIP],
+  [POSE_LANDMARKS.RIGHT_SHOULDER, POSE_LANDMARKS.RIGHT_HIP],
+  [POSE_LANDMARKS.LEFT_HIP, POSE_LANDMARKS.RIGHT_HIP],
+
+  // Left arm
+  [POSE_LANDMARKS.LEFT_SHOULDER, POSE_LANDMARKS.LEFT_ELBOW],
+  [POSE_LANDMARKS.LEFT_ELBOW, POSE_LANDMARKS.LEFT_WRIST],
+
+  // Right arm
+  [POSE_LANDMARKS.RIGHT_SHOULDER, POSE_LANDMARKS.RIGHT_ELBOW],
+  [POSE_LANDMARKS.RIGHT_ELBOW, POSE_LANDMARKS.RIGHT_WRIST],
+
+  // Left leg
+  [POSE_LANDMARKS.LEFT_HIP, POSE_LANDMARKS.LEFT_KNEE],
+  [POSE_LANDMARKS.LEFT_KNEE, POSE_LANDMARKS.LEFT_ANKLE],
+
+  // Right leg
+  [POSE_LANDMARKS.RIGHT_HIP, POSE_LANDMARKS.RIGHT_KNEE],
+  [POSE_LANDMARKS.RIGHT_KNEE, POSE_LANDMARKS.RIGHT_ANKLE],
+] as const;
+
 export function drawPoseSkeleton(
   ctx: CanvasRenderingContext2D,
   landmarks: NormalizedLandmark[],
@@ -371,35 +396,13 @@ export function drawPoseSkeleton(
   canvasHeight: number,
   color: string = '#00FF00'
 ): void {
-  // Define connections between landmarks
-  const connections = [
-    // Torso
-    [POSE_LANDMARKS.LEFT_SHOULDER, POSE_LANDMARKS.RIGHT_SHOULDER],
-    [POSE_LANDMARKS.LEFT_SHOULDER, POSE_LANDMARKS.LEFT_HIP],
-    [POSE_LANDMARKS.RIGHT_SHOULDER, POSE_LANDMARKS.RIGHT_HIP],
-    [POSE_LANDMARKS.LEFT_HIP, POSE_LANDMARKS.RIGHT_HIP],
-
-    // Left arm
-    [POSE_LANDMARKS.LEFT_SHOULDER, POSE_LANDMARKS.LEFT_ELBOW],
-    [POSE_LANDMARKS.LEFT_ELBOW, POSE_LANDMARKS.LEFT_WRIST],
-
-    // Right arm
-    [POSE_LANDMARKS.RIGHT_SHOULDER, POSE_LANDMARKS.RIGHT_ELBOW],
-    [POSE_LANDMARKS.RIGHT_ELBOW, POSE_LANDMARKS.RIGHT_WRIST],
-
-    // Left leg
-    [POSE_LANDMARKS.LEFT_HIP, POSE_LANDMARKS.LEFT_KNEE],
-    [POSE_LANDMARKS.LEFT_KNEE, POSE_LANDMARKS.LEFT_ANKLE],
-
-    // Right leg
-    [POSE_LANDMARKS.RIGHT_HIP, POSE_LANDMARKS.RIGHT_KNEE],
-    [POSE_LANDMARKS.RIGHT_KNEE, POSE_LANDMARKS.RIGHT_ANKLE],
-  ];
-
   // Draw connections
   ctx.strokeStyle = color;
   ctx.lineWidth = 3;
-  connections.forEach(([start, end]) => {
+
+  // Use for loop instead of forEach for better performance
+  for (let i = 0; i < POSE_CONNECTIONS.length; i++) {
+    const [start, end] = POSE_CONNECTIONS[i];
     const startLandmark = landmarks[start];
     const endLandmark = landmarks[end];
 
@@ -411,11 +414,12 @@ export function drawPoseSkeleton(
       ctx.lineTo(endLandmark.x * canvasWidth, endLandmark.y * canvasHeight);
       ctx.stroke();
     }
-  });
+  }
 
-  // Draw landmarks
+  // Draw landmarks - use for loop for better performance
   ctx.fillStyle = color;
-  landmarks.forEach((landmark) => {
+  for (let i = 0; i < landmarks.length; i++) {
+    const landmark = landmarks[i];
     if (landmark && landmark.visibility && landmark.visibility > 0.5) {
       ctx.beginPath();
       ctx.arc(
@@ -427,7 +431,7 @@ export function drawPoseSkeleton(
       );
       ctx.fill();
     }
-  });
+  }
 }
 
 /**

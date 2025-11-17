@@ -23,6 +23,7 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
   const recorderRef = useRef<Recorder | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const startTimeRef = useRef<number | null>(null);
+  const canvasContextRef = useRef<CanvasRenderingContext2D | null>(null); // Reuse canvas context
 
   const [phase, setPhase] = useState<RecordingPhase>('preparing');
   const [countdown, setCountdown] = useState(3);
@@ -111,14 +112,33 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
 
     return () => {
       mounted = false;
+
+      // Stop camera stream
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
       }
+
+      // Cancel animation frames
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
       }
       if (detectionFrameRef.current) {
         cancelAnimationFrame(detectionFrameRef.current);
+        detectionFrameRef.current = null;
+      }
+
+      // Clear canvas and release context
+      if (canvasRef.current && canvasContextRef.current) {
+        canvasContextRef.current.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        canvasContextRef.current = null;
+      }
+
+      // Stop recorder if active
+      if (recorderRef.current && recorderRef.current.isRecording()) {
+        recorderRef.current.stop().catch(err => console.warn('Error stopping recorder on cleanup:', err));
+        recorderRef.current = null;
       }
     };
   }, [onError, detectionMode]);
@@ -141,13 +161,20 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
     return () => clearInterval(timer);
   }, [phase]);
 
-  // Pose detection loop (runs at ~15 FPS during detecting and recording phases)
+  // Pose detection loop (runs at ~10 FPS during detecting and recording phases)
+  // This is separated from rendering to allow independent frame rates
   useEffect(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
 
     if (!video || !canvas || !detectionMode) return;
     if (phase !== 'detecting' && phase !== 'recording') return;
+
+    // Cancel any existing detection frame before starting new one
+    if (detectionFrameRef.current) {
+      cancelAnimationFrame(detectionFrameRef.current);
+      detectionFrameRef.current = null;
+    }
 
     const runDetection = () => {
       detectPose(video);
@@ -159,6 +186,7 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
     return () => {
       if (detectionFrameRef.current) {
         cancelAnimationFrame(detectionFrameRef.current);
+        detectionFrameRef.current = null;
       }
     };
   }, [phase, detectionMode, detectPose]);
@@ -171,8 +199,16 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
     if (!canvas || !video || phase === 'preparing' || phase === 'completed' || phase === 'preview') return;
     if (phase === 'detecting' && !detectionMode) return;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    // Reuse existing canvas context to avoid memory leaks
+    let ctx = canvasContextRef.current;
+    if (!ctx) {
+      ctx = canvas.getContext('2d', {
+        willReadFrequently: false,
+        alpha: false  // Disable alpha for better performance
+      });
+      if (!ctx) return;
+      canvasContextRef.current = ctx;
+    }
 
     // Set canvas size to match video
     canvas.width = video.videoWidth || 1280;
@@ -186,10 +222,19 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
       startTimeRef.current = Date.now();
     }
 
+    // Cancel any existing animation frame before starting new one
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+
     // Animation loop to draw video (and overlays)
     const drawFrame = () => {
       if (!ctx || !video) return;
       if (phase !== 'countdown' && phase !== 'recording' && phase !== 'detecting') return;
+
+      // Clear canvas before drawing (prevent accumulation)
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       // Draw video frame
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -232,6 +277,12 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+
+      // Clear canvas on cleanup
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
       }
     };
   }, [phase, targetDuration, detectionMode, detectionResult]);
@@ -260,8 +311,15 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
   };
 
   const stopRecording = async () => {
+    // Cancel all animation frames
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+
+    if (detectionFrameRef.current) {
+      cancelAnimationFrame(detectionFrameRef.current);
+      detectionFrameRef.current = null;
     }
 
     if (recorderRef.current && recorderRef.current.isRecording()) {
