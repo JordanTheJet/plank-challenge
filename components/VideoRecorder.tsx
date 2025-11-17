@@ -62,7 +62,7 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
       }
     },
     stabilityFrames: 5,
-    gracePeriodFrames: 45, // ~3 seconds at 15 FPS
+    gracePeriodFrames: 30, // ~3 seconds at 10 FPS
   });
 
   // Initialize camera and setup canvas

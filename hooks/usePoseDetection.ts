@@ -103,8 +103,8 @@ export function usePoseDetection({
     try {
       const now = performance.now();
 
-      // Throttle detection to ~15 FPS for performance
-      if (now - lastDetectionTimeRef.current < 66) return;
+      // Throttle detection to ~10 FPS for better stability (reduces memory pressure)
+      if (now - lastDetectionTimeRef.current < 100) return;
       lastDetectionTimeRef.current = now;
 
       // Detect pose landmarks
@@ -164,8 +164,19 @@ export function usePoseDetection({
           onPlankLost?.();
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error during pose detection:', err);
+
+      // Handle specific MediaPipe error codes
+      if (err?.code === 5 || err?.message?.includes('Internal error')) {
+        // Error code 5 is a MediaPipe internal error (often memory/GPU related)
+        console.warn('MediaPipe error code 5 - attempting to recover');
+        setError('Detection error - try refreshing if issue persists');
+
+        // Don't crash the app, just skip this frame
+        return;
+      }
+
       setError('Detection error occurred');
     }
   }, [isReady, onPlankDetected, onPlankLost, stabilityFrames, gracePeriodFrames]);
