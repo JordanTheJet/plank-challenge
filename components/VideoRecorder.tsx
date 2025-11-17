@@ -297,8 +297,8 @@ export default function VideoRecorder({ targetDuration, onComplete, onError }: V
 
       {/* Countdown overlay */}
       {phase === 'countdown' && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-lg">
-          <div className="text-white text-9xl font-bold font-mono animate-pulse">
+        <div className="absolute inset-0 flex items-center justify-center rounded-lg">
+          <div className="text-white text-9xl font-bold font-mono animate-pulse drop-shadow-2xl" style={{ textShadow: '0 0 20px rgba(0,0,0,0.8), 0 0 40px rgba(0,0,0,0.6)' }}>
             {countdown}
           </div>
         </div>

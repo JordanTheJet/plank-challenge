@@ -139,10 +139,10 @@ export function downloadBlob(blob: Blob, filename: string): void {
  */
 export async function getCameraStream(): Promise<MediaStream> {
   try {
-    // Try to get rear camera on mobile devices
+    // Try to get front-facing camera (selfie mode) on mobile devices
     const constraints: MediaStreamConstraints = {
       video: {
-        facingMode: { ideal: 'environment' }, // Prefer rear camera
+        facingMode: { ideal: 'user' }, // Prefer front camera (selfie)
         width: { ideal: 1280 },
         height: { ideal: 720 },
       },
