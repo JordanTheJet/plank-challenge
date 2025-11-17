@@ -199,28 +199,19 @@ export default function VideoRecorder({ targetDuration, onComplete, onError }: V
     }
   };
 
-  const handleRestart = () => {
+  const handleStop = () => {
     // Debounce: prevent rapid clicking
     if (isRestarting) return;
     setIsRestarting(true);
 
-    // Stop current recording if active
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
+    // Capture current frame as final frame
+    if (canvasRef.current) {
+      const finalFrame = canvasRef.current.toDataURL('image/png');
+      setFinalFrameData(finalFrame);
     }
 
-    if (recorderRef.current && recorderRef.current.isRecording()) {
-      recorderRef.current.stop().catch(() => {
-        // Ignore errors during restart
-      });
-    }
-
-    // Reset state and restart countdown
-    setPhase('countdown');
-    setCountdown(3);
-    setElapsedTime(0);
-    setVideoBlob(null);
-    setFinalFrameData(null);
+    // Stop recording and go to preview
+    stopRecording();
 
     // Clear debounce after 500ms
     setTimeout(() => {
@@ -322,14 +313,14 @@ export default function VideoRecorder({ targetDuration, onComplete, onError }: V
         </div>
       )}
 
-      {/* Restart button (visible during countdown and recording) */}
+      {/* Stop button (visible during countdown and recording) */}
       {(phase === 'countdown' || phase === 'recording') && (
         <button
-          onClick={handleRestart}
+          onClick={handleStop}
           disabled={isRestarting}
-          className="absolute top-4 right-4 px-4 py-2 bg-white bg-opacity-90 hover:bg-opacity-100 text-gray-800 font-semibold rounded-lg shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          className="absolute top-4 right-4 px-4 py-2 bg-red-600 bg-opacity-90 hover:bg-opacity-100 text-white font-semibold rounded-lg shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Restart
+          Stop
         </button>
       )}
 
@@ -347,7 +338,7 @@ export default function VideoRecorder({ targetDuration, onComplete, onError }: V
           <div className="text-white text-center px-6 py-8">
             <div className="text-4xl mb-4">✓</div>
             <div className="text-2xl font-semibold mb-2">Great job!</div>
-            <div className="text-lg mb-8">You held your plank for {formatDuration(targetDuration)}!</div>
+            <div className="text-lg mb-8">You held your plank for {formatDuration(elapsedTime)}!</div>
 
             <div className="flex flex-col space-y-3">
               <button
