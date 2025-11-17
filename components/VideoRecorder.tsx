@@ -281,18 +281,27 @@ export default function VideoRecorder({ targetDuration, onComplete, onError }: V
 
   return (
     <div className="relative w-full max-w-2xl mx-auto">
-      {/* Video element (hidden, used as source) */}
-      <video
-        ref={videoRef}
-        className="hidden"
-        playsInline
-        muted
-      />
-
       {/* Canvas for recording */}
       <canvas
         ref={canvasRef}
         className="w-full rounded-lg shadow-2xl"
+        style={{ display: 'block', width: '100%', height: 'auto' }}
+      />
+
+      {/* Video element (completely hidden, used only as source) */}
+      <video
+        ref={videoRef}
+        style={{
+          position: 'absolute',
+          top: '-9999px',
+          left: '-9999px',
+          width: '1px',
+          height: '1px',
+          opacity: 0,
+          pointerEvents: 'none'
+        }}
+        playsInline
+        muted
       />
 
       {/* Countdown overlay */}
