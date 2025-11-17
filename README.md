@@ -8,10 +8,13 @@ A web app for recording plank exercises with a timer overlay, designed for progr
 - **Rest Days**: Every Sunday is automatically a rest day
 - **Video Recording**: Records your plank with timer overlay using canvas compositing
 - **Timer Overlay**: Large, visible stopwatch-style timer rendered directly into the video
-- **Auto-Download**: Video automatically downloads when timer completes
+- **Front-Facing Camera**: Uses selfie camera so you can see yourself while recording
+- **Transparent Countdown**: See yourself during the 3-2-1 countdown to get positioned
+- **Stop Button**: Stop recording early and choose to download or try again
+- **Manual Download**: Choose to download video, screenshot, or record another
+- **Screenshot Export**: Capture final frame as PNG with timer visible
 - **Mobile-First**: Optimized for iOS Safari and Chrome Android
-- **Rear Camera Default**: Automatically prefers rear camera on mobile devices
-- **Discord Integration**: Built-in link to community Discord channel
+- **Discord Integration**: Easy access to Plank-Challenge Discord community
 
 ## Tech Stack
 
@@ -90,18 +93,22 @@ Formula: `Target = 30 + (Training Days × 6)`
 
 ### Video Recording
 
-1. Requests camera access (prefers rear camera on mobile)
-2. Shows 3-second countdown
+1. Requests front-facing camera access (selfie mode)
+2. Shows transparent 3-second countdown over live video feed
 3. Streams video to hidden `<video>` element
 4. Renders video + timer overlay on `<canvas>` at 30 FPS
 5. Captures canvas stream with MediaRecorder API
-6. Auto-stops and downloads when target duration reached
+6. Stop button allows ending recording early
+7. Preview screen shows options to download video, screenshot, or record another
 
 ### File Naming
 
 Videos are saved as: `plank-dayX-YYYY-MM-DD.webm`
+Screenshots are saved as: `plank-dayX-YYYYMMDD-screenshot.png`
 
-Example: `plank-day5-2025-11-22.webm`
+Examples:
+- `plank-day5-2025-11-22.webm`
+- `plank-day5-20251122-screenshot.png`
 
 ## Browser Compatibility
 
