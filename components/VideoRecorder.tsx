@@ -27,6 +27,7 @@ export default function VideoRecorder({ targetDuration, onComplete, onError }: V
   const [error, setError] = useState<string | null>(null);
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
   const [isRestarting, setIsRestarting] = useState(false);
+  const [finalFrameData, setFinalFrameData] = useState<string | null>(null);
 
   // Initialize camera and setup canvas
   useEffect(() => {
@@ -97,14 +98,12 @@ export default function VideoRecorder({ targetDuration, onComplete, onError }: V
     return () => clearInterval(timer);
   }, [phase]);
 
-  // Handle recording
+  // Handle video rendering to canvas (for both preview and recording)
   useEffect(() => {
-    if (phase !== 'recording') return;
-
     const canvas = canvasRef.current;
     const video = videoRef.current;
 
-    if (!canvas || !video) return;
+    if (!canvas || !video || phase === 'preparing' || phase === 'completed' || phase === 'preview') return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -113,31 +112,38 @@ export default function VideoRecorder({ targetDuration, onComplete, onError }: V
     canvas.width = video.videoWidth || 1280;
     canvas.height = video.videoHeight || 720;
 
-    // Start recording
-    const canvasStream = canvas.captureStream(30); // 30 FPS
-    recorderRef.current = new Recorder();
-    recorderRef.current.start(canvasStream);
+    // Start recording if in recording phase
+    if (phase === 'recording') {
+      const canvasStream = canvas.captureStream(30); // 30 FPS
+      recorderRef.current = new Recorder();
+      recorderRef.current.start(canvasStream);
+      startTimeRef.current = Date.now();
+    }
 
-    startTimeRef.current = Date.now();
-
-    // Animation loop to draw video and timer overlay
+    // Animation loop to draw video (and timer overlay during recording)
     const drawFrame = () => {
-      if (!ctx || !video || phase !== 'recording') return;
+      if (!ctx || !video) return;
+      if (phase !== 'countdown' && phase !== 'recording') return;
 
       // Draw video frame
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      // Calculate elapsed time
-      const elapsed = Math.floor((Date.now() - (startTimeRef.current || 0)) / 1000);
-      setElapsedTime(elapsed);
+      // During recording, also draw timer overlay
+      if (phase === 'recording') {
+        const elapsed = Math.floor((Date.now() - (startTimeRef.current || 0)) / 1000);
+        setElapsedTime(elapsed);
 
-      // Draw timer overlay
-      drawTimerOverlay(ctx, canvas.width, canvas.height, elapsed);
+        // Draw timer overlay
+        drawTimerOverlay(ctx, canvas.width, canvas.height, elapsed);
 
-      // Check if target duration reached (use > to show final second)
-      if (elapsed > targetDuration) {
-        stopRecording();
-        return;
+        // Check if target duration reached (capture final frame at exact target)
+        if (elapsed >= targetDuration) {
+          // Capture final frame before stopping
+          const finalFrame = canvas.toDataURL('image/png');
+          setFinalFrameData(finalFrame);
+          stopRecording();
+          return;
+        }
       }
 
       animationFrameRef.current = requestAnimationFrame(drawFrame);
@@ -214,6 +220,7 @@ export default function VideoRecorder({ targetDuration, onComplete, onError }: V
     setCountdown(3);
     setElapsedTime(0);
     setVideoBlob(null);
+    setFinalFrameData(null);
 
     // Clear debounce after 500ms
     setTimeout(() => {
@@ -237,20 +244,15 @@ export default function VideoRecorder({ targetDuration, onComplete, onError }: V
   };
 
   const handleDownloadScreenshot = () => {
-    if (canvasRef.current) {
+    if (finalFrameData) {
       const dayNumber = getDayNumber();
       const filename = `plank-day${dayNumber}-${format(new Date(), 'yyyyMMdd')}-screenshot.png`;
 
-      canvasRef.current.toBlob((blob) => {
-        if (blob) {
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = filename;
-          a.click();
-          URL.revokeObjectURL(url);
-        }
-      }, 'image/png');
+      // Download the captured final frame
+      const a = document.createElement('a');
+      a.href = finalFrameData;
+      a.download = filename;
+      a.click();
     }
   };
 
@@ -260,6 +262,7 @@ export default function VideoRecorder({ targetDuration, onComplete, onError }: V
     setCountdown(3);
     setElapsedTime(0);
     setVideoBlob(null);
+    setFinalFrameData(null);
   };
 
   if (error) {

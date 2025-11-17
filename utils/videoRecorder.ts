@@ -90,10 +90,8 @@ export class VideoRecorder {
       try {
         this.mediaRecorder.stop();
 
-        // Stop all tracks in the stream
-        if (this.stream) {
-          this.stream.getTracks().forEach((track) => track.stop());
-        }
+        // Don't stop stream tracks here - let the component handle cleanup
+        // Stopping tracks immediately causes recording to end prematurely
       } catch (error) {
         reject(error);
       }
