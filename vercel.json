@@ -1,0 +1,9 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "framework": "nextjs",
+  "regions": ["iad1"],
+  "env": {
+    "NEXT_PUBLIC_DISCORD_URL": "https://discord.com/channels/1210290974601773056/1438326766279196782"
+  }
+}
