@@ -12,25 +12,68 @@ global.PoseLandmarker = {
 
 // Mock MediaRecorder
 class MediaRecorderMock {
-  constructor() {
+  constructor(stream, options) {
     this.state = 'inactive'
     this.ondataavailable = null
     this.onstop = null
     this.onerror = null
+    this.onstart = null
+    this.onpause = null
+    this.onresume = null
+    this.stream = stream
+    this.mimeType = options?.mimeType || 'video/webm'
   }
 
-  start() {
+  start(timeslice) {
     this.state = 'recording'
+    if (this.onstart) {
+      this.onstart()
+    }
+    // Emit dataavailable event periodically if timeslice is set
+    if (timeslice) {
+      this.timesliceInterval = setInterval(() => {
+        if (this.ondataavailable) {
+          this.ondataavailable({ data: new Blob(['mock-data'], { type: this.mimeType }) })
+        }
+      }, timeslice)
+    }
   }
 
   stop() {
+    if (this.timesliceInterval) {
+      clearInterval(this.timesliceInterval)
+    }
     this.state = 'inactive'
+    // Emit final dataavailable event
+    if (this.ondataavailable) {
+      this.ondataavailable({ data: new Blob(['mock-data'], { type: this.mimeType }) })
+    }
     if (this.onstop) {
       this.onstop()
     }
   }
 
-  static isTypeSupported() {
+  pause() {
+    this.state = 'paused'
+    if (this.onpause) {
+      this.onpause()
+    }
+  }
+
+  resume() {
+    this.state = 'recording'
+    if (this.onresume) {
+      this.onresume()
+    }
+  }
+
+  requestData() {
+    if (this.ondataavailable) {
+      this.ondataavailable({ data: new Blob(['mock-data'], { type: this.mimeType }) })
+    }
+  }
+
+  static isTypeSupported(type) {
     return true
   }
 }
