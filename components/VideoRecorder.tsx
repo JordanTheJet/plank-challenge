@@ -366,6 +366,12 @@ function VideoRecorder({ targetDuration, onComplete, onError, detectionMode = fa
 
 
   const stopRecording = useCallback(async () => {
+    // Capture final elapsed time before stopping
+    if (startTimeRef.current) {
+      const finalElapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+      setElapsedTime(finalElapsed);
+    }
+
     // Cancel all animation frames
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
