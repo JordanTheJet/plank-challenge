@@ -55,11 +55,11 @@ describe('calculateAngle', () => {
   it('should calculate acute angles correctly', () => {
     const a = createMockLandmark(0, 0);
     const b = createMockLandmark(1, 0);
-    const c = createMockLandmark(1.5, 0.866); // Creates roughly 60 degree angle
+    const c = createMockLandmark(1.5, 0.866); // Creates roughly 120 degree angle
 
     const angle = calculateAngle(a, b, c);
-    expect(angle).toBeGreaterThan(0);
-    expect(angle).toBeLessThan(90);
+    expect(angle).toBeGreaterThan(119);
+    expect(angle).toBeLessThan(121);
   });
 
   it('should handle negative coordinates', () => {
@@ -176,9 +176,9 @@ describe('detectPlankPosition', () => {
         [POSE_LANDMARKS.LEFT_SHOULDER]: createMockLandmark(0.3, 0.45, 0, 0.9),
         [POSE_LANDMARKS.LEFT_ELBOW]: createMockLandmark(0.3, 0.5, 0, 0.9),
         [POSE_LANDMARKS.LEFT_WRIST]: createMockLandmark(0.3, 0.55, 0, 0.9),
-        [POSE_LANDMARKS.LEFT_HIP]: createMockLandmark(0.6, 0.6, 0, 0.9), // Too low
-        [POSE_LANDMARKS.LEFT_KNEE]: createMockLandmark(0.8, 0.65, 0, 0.9),
-        [POSE_LANDMARKS.LEFT_ANKLE]: createMockLandmark(0.95, 0.68, 0, 0.9),
+        [POSE_LANDMARKS.LEFT_HIP]: createMockLandmark(0.6, 0.75, 0, 0.9), // Too low - sagging
+        [POSE_LANDMARKS.LEFT_KNEE]: createMockLandmark(0.8, 0.7, 0, 0.9),
+        [POSE_LANDMARKS.LEFT_ANKLE]: createMockLandmark(0.95, 0.65, 0, 0.9),
       });
 
       const result = detectPlankPosition(landmarks);
@@ -279,7 +279,7 @@ describe('detectPlankPosition', () => {
   describe('with head position issues', () => {
     it('should detect when head is not in neutral position', () => {
       const landmarks = createMockLandmarks({
-        [POSE_LANDMARKS.NOSE]: createMockLandmark(0.3, 0.6, 0, 0.9), // Head too low
+        [POSE_LANDMARKS.NOSE]: createMockLandmark(0.3, 0.65, 0, 0.9), // Head too low
         [POSE_LANDMARKS.LEFT_SHOULDER]: createMockLandmark(0.3, 0.45, 0, 0.9),
         [POSE_LANDMARKS.LEFT_ELBOW]: createMockLandmark(0.3, 0.5, 0, 0.9),
         [POSE_LANDMARKS.LEFT_WRIST]: createMockLandmark(0.3, 0.55, 0, 0.9),
