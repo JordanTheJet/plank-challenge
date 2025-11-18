@@ -10,7 +10,7 @@ import { getOptimizedCanvasContext, CanvasPerformanceMonitor } from '@/lib/canva
 
 interface VideoRecorderProps {
   targetDuration: number;
-  onComplete: () => void;
+  onComplete: (elapsedTime: number) => void;
   onError: (error: string) => void;
   detectionMode?: boolean;
 }
@@ -476,9 +476,9 @@ function VideoRecorder({ targetDuration, onComplete, onError, detectionMode = fa
         streamRef.current.getTracks().forEach(track => track.stop());
       }
 
-      onComplete();
+      onComplete(elapsedTime);
     }
-  }, [videoBlob, onComplete]);
+  }, [videoBlob, onComplete, elapsedTime]);
 
   const handleDownloadScreenshot = useCallback(() => {
     if (finalFrameData) {
