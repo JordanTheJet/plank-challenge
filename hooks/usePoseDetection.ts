@@ -4,8 +4,9 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { PoseLandmarker, FilesetResolver, DrawingUtils } from '@mediapipe/tasks-vision';
+import type { PoseLandmarker } from '@mediapipe/tasks-vision';
 import { PlankDetectionResult, detectPlankPosition } from '@/lib/poseDetection';
+import { loadPoseLandmarker, cleanupPoseLandmarker } from '@/lib/mediapipeLoader';
 
 export interface UsePoseDetectionOptions {
   onPlankDetected?: () => void;
@@ -43,7 +44,7 @@ export function usePoseDetection({
   const lastDetectionTimeRef = useRef(0);
   const lastResultRef = useRef<any>(null); // Store last result for cleanup
 
-  // Initialize MediaPipe Pose
+  // Initialize MediaPipe Pose (with dynamic loading for code splitting)
   useEffect(() => {
     if (!enableDetection) return;
 
@@ -53,24 +54,9 @@ export function usePoseDetection({
       try {
         setIsProcessing(true);
 
-        // Load MediaPipe Pose
-        const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
-        );
-
-        if (!mounted) return;
-
-        const poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-            delegate: 'GPU',
-          },
-          runningMode: 'VIDEO',
-          numPoses: 1,
-          minPoseDetectionConfidence: 0.3,
-          minPosePresenceConfidence: 0.3,
-          minTrackingConfidence: 0.3,
-        });
+        // Dynamic import - MediaPipe is loaded only when needed
+        // This significantly reduces initial bundle size
+        const poseLandmarker = await loadPoseLandmarker();
 
         if (!mounted) return;
 
@@ -96,15 +82,9 @@ export function usePoseDetection({
         lastResultRef.current = null;
       }
 
-      // Close and dispose MediaPipe instance
-      if (poseLandmarkerRef.current) {
-        try {
-          poseLandmarkerRef.current.close();
-        } catch (err) {
-          console.warn('Error closing pose landmarker:', err);
-        }
-        poseLandmarkerRef.current = null;
-      }
+      // Note: We don't cleanup the MediaPipe instance here to allow reuse
+      // Call cleanupPoseLandmarker() explicitly when app unmounts if needed
+      poseLandmarkerRef.current = null;
     };
   }, [enableDetection]);
 

@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { VideoRecorder as Recorder, getCameraStream, downloadBlob } from '@/utils/videoRecorder';
 import { formatDuration, generateFilename, getDayNumber } from '@/utils/timerLogic';
 import { format } from 'date-fns';
 import { usePoseDetection } from '@/hooks/usePoseDetection';
 import { drawPoseSkeleton, drawDetectionFeedback } from '@/lib/poseDetection';
+import { getOptimizedCanvasContext, CanvasPerformanceMonitor } from '@/lib/canvasOptimizations';
 
 interface VideoRecorderProps {
   targetDuration: number;
@@ -16,7 +17,37 @@ interface VideoRecorderProps {
 
 type RecordingPhase = 'preparing' | 'countdown' | 'recording' | 'preview' | 'completed' | 'detecting';
 
-export default function VideoRecorder({ targetDuration, onComplete, onError, detectionMode = false }: VideoRecorderProps) {
+// Memoize the timer overlay drawing function (performance-critical)
+const drawTimerOverlayMemoized = (
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  seconds: number,
+  targetDuration: number
+) => {
+  const timeText = formatDuration(seconds);
+  const fontSize = Math.min(width, height) * 0.15; // Responsive font size
+
+  // Semi-transparent background
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fillRect(width * 0.25, height * 0.05, width * 0.5, fontSize * 1.5);
+
+  // Timer text
+  ctx.font = `bold ${fontSize}px monospace`;
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(timeText, width / 2, height * 0.05 + fontSize * 0.75);
+
+  // Target duration indicator (smaller text below)
+  const targetText = `/ ${formatDuration(targetDuration)}`;
+  const smallFontSize = fontSize * 0.4;
+  ctx.font = `${smallFontSize}px monospace`;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+  ctx.fillText(targetText, width / 2, height * 0.05 + fontSize * 1.3);
+};
+
+function VideoRecorder({ targetDuration, onComplete, onError, detectionMode = false }: VideoRecorderProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -35,6 +66,41 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
   const [gracePeriodCount, setGracePeriodCount] = useState(0);
   const detectionFrameRef = useRef<number | null>(null);
 
+  // Performance monitoring (development only)
+  const performanceMonitorRef = useRef<CanvasPerformanceMonitor | null>(null);
+
+  // Declare stopRecording ref to avoid dependency issues
+  const stopRecordingRef = useRef<(() => Promise<void>) | null>(null);
+
+  // Memoize pose detection callbacks to prevent hook re-initialization
+  const handlePlankDetected = useCallback(() => {
+    // Auto-start recording when plank detected
+    setPhase(prevPhase => {
+      if (prevPhase === 'detecting') {
+        return 'countdown';
+      }
+      return prevPhase;
+    });
+  }, []);
+
+  const handlePlankLost = useCallback(() => {
+    // Auto-stop recording when plank lost (after grace period)
+    setPhase(prevPhase => {
+      if (prevPhase === 'recording') {
+        // Capture final frame before stopping
+        if (canvasRef.current) {
+          const finalFrame = canvasRef.current.toDataURL('image/png');
+          setFinalFrameData(finalFrame);
+        }
+        // Call stopRecording via ref
+        if (stopRecordingRef.current) {
+          stopRecordingRef.current();
+        }
+      }
+      return prevPhase;
+    });
+  }, []);
+
   // Pose detection hook
   const {
     isReady: poseReady,
@@ -45,23 +111,8 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
     reset: resetPoseDetection,
   } = usePoseDetection({
     enableDetection: detectionMode,
-    onPlankDetected: () => {
-      // Auto-start recording when plank detected
-      if (phase === 'detecting') {
-        setPhase('countdown');
-      }
-    },
-    onPlankLost: () => {
-      // Auto-stop recording when plank lost (after grace period)
-      if (phase === 'recording') {
-        // Capture final frame before stopping
-        if (canvasRef.current) {
-          const finalFrame = canvasRef.current.toDataURL('image/png');
-          setFinalFrameData(finalFrame);
-        }
-        stopRecording();
-      }
-    },
+    onPlankDetected: handlePlankDetected,
+    onPlankLost: handlePlankLost,
     stabilityFrames: 5,
     gracePeriodFrames: 30, // ~3 seconds at 10 FPS
   });
@@ -200,14 +251,21 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
     if (phase === 'detecting' && !detectionMode) return;
 
     // Reuse existing canvas context to avoid memory leaks
+    // Use optimized context settings for better performance
     let ctx = canvasContextRef.current;
     if (!ctx) {
-      ctx = canvas.getContext('2d', {
+      ctx = getOptimizedCanvasContext(canvas, {
+        alpha: false,
+        desynchronized: true, // Lower latency
         willReadFrequently: false,
-        alpha: false  // Disable alpha for better performance
       });
       if (!ctx) return;
       canvasContextRef.current = ctx;
+    }
+
+    // Initialize performance monitor in development
+    if (process.env.NODE_ENV === 'development' && !performanceMonitorRef.current) {
+      performanceMonitorRef.current = new CanvasPerformanceMonitor();
     }
 
     // Set canvas size to match video
@@ -233,7 +291,11 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
       if (!ctx || !video) return;
       if (phase !== 'countdown' && phase !== 'recording' && phase !== 'detecting') return;
 
+      // Performance monitoring (development only)
+      const frameStart = performanceMonitorRef.current?.startFrame();
+
       // Clear canvas before drawing (prevent accumulation)
+      // Use fast clear for better performance
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       // Draw video frame
@@ -256,8 +318,8 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
         const elapsed = Math.floor((Date.now() - (startTimeRef.current || 0)) / 1000);
         setElapsedTime(elapsed);
 
-        // Draw timer overlay
-        drawTimerOverlay(ctx, canvas.width, canvas.height, elapsed);
+        // Draw timer overlay (use memoized function)
+        drawTimerOverlayMemoized(ctx, canvas.width, canvas.height, elapsed, targetDuration);
 
         // Check if target duration reached (capture final frame at exact target)
         if (elapsed >= targetDuration && !detectionMode) {
@@ -266,6 +328,19 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
           setFinalFrameData(finalFrame);
           stopRecording();
           return;
+        }
+      }
+
+      // Performance monitoring (development only)
+      if (frameStart !== undefined && performanceMonitorRef.current) {
+        performanceMonitorRef.current.endFrame(frameStart);
+
+        // Log performance stats every 60 frames
+        if (process.env.NODE_ENV === 'development' && Math.random() < 0.016) { // ~1/60 chance
+          const stats = performanceMonitorRef.current.getStats();
+          if (!stats.isGood) {
+            console.warn('Canvas performance:', stats);
+          }
         }
       }
 
@@ -287,30 +362,8 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
     };
   }, [phase, targetDuration, detectionMode, detectionResult]);
 
-  const drawTimerOverlay = (ctx: CanvasRenderingContext2D, width: number, height: number, seconds: number) => {
-    const timeText = formatDuration(seconds);
-    const fontSize = Math.min(width, height) * 0.15; // Responsive font size
 
-    // Semi-transparent background
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.fillRect(width * 0.25, height * 0.05, width * 0.5, fontSize * 1.5);
-
-    // Timer text
-    ctx.font = `bold ${fontSize}px monospace`;
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(timeText, width / 2, height * 0.05 + fontSize * 0.75);
-
-    // Target duration indicator (smaller text below)
-    const targetText = `/ ${formatDuration(targetDuration)}`;
-    const smallFontSize = fontSize * 0.4;
-    ctx.font = `${smallFontSize}px monospace`;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    ctx.fillText(targetText, width / 2, height * 0.05 + fontSize * 1.3);
-  };
-
-  const stopRecording = async () => {
+  const stopRecording = useCallback(async () => {
     // Cancel all animation frames
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
@@ -333,9 +386,14 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
         onError(errorMsg);
       }
     }
-  };
+  }, [onError]);
 
-  const handleStop = () => {
+  // Update ref when stopRecording changes
+  useEffect(() => {
+    stopRecordingRef.current = stopRecording;
+  }, [stopRecording]);
+
+  const handleStop = useCallback(() => {
     // Debounce: prevent rapid clicking
     if (isRestarting) return;
     setIsRestarting(true);
@@ -379,9 +437,9 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
     setTimeout(() => {
       setIsRestarting(false);
     }, 500);
-  };
+  }, [isRestarting, phase, resetPoseDetection, onComplete, stopRecording]);
 
-  const handleDownloadVideo = () => {
+  const handleDownloadVideo = useCallback(() => {
     if (videoBlob) {
       const filename = generateFilename();
       downloadBlob(videoBlob, filename);
@@ -394,9 +452,9 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
 
       onComplete();
     }
-  };
+  }, [videoBlob, onComplete]);
 
-  const handleDownloadScreenshot = () => {
+  const handleDownloadScreenshot = useCallback(() => {
     if (finalFrameData) {
       const dayNumber = getDayNumber();
       const filename = `plank-day${dayNumber}-${format(new Date(), 'yyyyMMdd')}-screenshot.png`;
@@ -407,9 +465,9 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
       a.download = filename;
       a.click();
     }
-  };
+  }, [finalFrameData]);
 
-  const handleRecordAnother = () => {
+  const handleRecordAnother = useCallback(() => {
     // Reset to appropriate phase
     if (detectionMode) {
       setPhase('detecting');
@@ -422,7 +480,7 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
     setVideoBlob(null);
     setFinalFrameData(null);
     setGracePeriodCount(0);
-  };
+  }, [detectionMode, resetPoseDetection]);
 
   if (error || poseError) {
     return (
@@ -566,3 +624,6 @@ export default function VideoRecorder({ targetDuration, onComplete, onError, det
     </div>
   );
 }
+
+// Export memoized component to prevent unnecessary re-renders from parent
+export default memo(VideoRecorder);

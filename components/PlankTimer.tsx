@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { calculateTargetDuration, getDayNumber, formatDuration } from '@/utils/timerLogic';
+import { preloadPoseLandmarker } from '@/lib/mediapipeLoader';
 import VideoRecorder from './VideoRecorder';
 import RestDay from './RestDay';
 
@@ -12,32 +13,34 @@ export default function PlankTimer() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [detectionMode, setDetectionMode] = useState(false);
 
-  const targetDuration = calculateTargetDuration();
-  const dayNumber = getDayNumber();
+  // Memoize calculations to avoid unnecessary recomputation
+  const targetDuration = useMemo(() => calculateTargetDuration(), []);
+  const dayNumber = useMemo(() => getDayNumber(), []);
 
   // If it's a rest day (Sunday), show rest day component
   if (targetDuration === null) {
     return <RestDay />;
   }
 
-  const handleStart = () => {
+  // Memoize callbacks to prevent unnecessary re-renders
+  const handleStart = useCallback(() => {
     setAppState('recording');
     setErrorMessage(null);
-  };
+  }, []);
 
-  const handleComplete = () => {
+  const handleComplete = useCallback(() => {
     setAppState('completed');
-  };
+  }, []);
 
-  const handleError = (error: string) => {
+  const handleError = useCallback((error: string) => {
     setErrorMessage(error);
     setAppState('idle');
-  };
+  }, []);
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     setAppState('idle');
     setErrorMessage(null);
-  };
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-50 to-blue-50 p-4">
@@ -89,7 +92,11 @@ export default function PlankTimer() {
               )}
 
               {/* Detection Mode Toggle */}
-              <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+              <div
+                className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-lg"
+                onMouseEnter={preloadPoseLandmarker}
+                onTouchStart={preloadPoseLandmarker}
+              >
                 <label className="flex items-center cursor-pointer">
                   <input
                     type="checkbox"
