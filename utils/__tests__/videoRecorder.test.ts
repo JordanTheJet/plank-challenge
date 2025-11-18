@@ -410,6 +410,9 @@ describe('Error handling', () => {
       constructor() {
         throw new Error('MediaRecorder not supported');
       }
+      static isTypeSupported() {
+        return true;
+      }
     };
 
     const recorder = new VideoRecorder();

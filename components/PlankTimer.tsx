@@ -12,6 +12,8 @@ export default function PlankTimer() {
   const [appState, setAppState] = useState<AppState>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [detectionMode, setDetectionMode] = useState(false);
+  const [cameraMode, setCameraMode] = useState<'user' | 'environment'>('environment');
+  const [actualElapsedTime, setActualElapsedTime] = useState<number>(0);
 
   // Memoize calculations to avoid unnecessary recomputation
   const targetDuration = useMemo(() => calculateTargetDuration(), []);
@@ -28,7 +30,8 @@ export default function PlankTimer() {
     setErrorMessage(null);
   }, []);
 
-  const handleComplete = useCallback(() => {
+  const handleComplete = useCallback((elapsedTime: number) => {
+    setActualElapsedTime(elapsedTime);
     setAppState('completed');
   }, []);
 
@@ -40,6 +43,7 @@ export default function PlankTimer() {
   const handleReset = useCallback(() => {
     setAppState('idle');
     setErrorMessage(null);
+    setActualElapsedTime(0);
   }, []);
 
   return (
@@ -48,10 +52,10 @@ export default function PlankTimer() {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-5xl font-bold text-gray-800 mb-2">
-            Plank Timer
+            Plank Challenge
           </h1>
           <p className="text-xl text-gray-600">
-            Day {dayNumber} Challenge
+            Day {dayNumber}
           </p>
         </div>
 
@@ -90,6 +94,28 @@ export default function PlankTimer() {
                   <p className="text-red-600 text-sm font-medium">{errorMessage}</p>
                 </div>
               )}
+
+              {/* Camera Selection Slider */}
+              <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="font-semibold text-gray-800">Camera</div>
+                    <div className="text-xs text-gray-600 mt-1">
+                      {cameraMode === 'environment' ? 'Back Camera' : 'Front Camera'}
+                    </div>
+                  </div>
+                  <label className="relative inline-block w-14 h-7 ml-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={cameraMode === 'user'}
+                      onChange={(e) => setCameraMode(e.target.checked ? 'user' : 'environment')}
+                      className="sr-only peer"
+                    />
+                    <div className="absolute inset-0 bg-blue-400 peer-checked:bg-purple-400 rounded-full transition-colors"></div>
+                    <div className="absolute left-1 top-1 w-5 h-5 bg-white rounded-full transition-transform peer-checked:translate-x-7"></div>
+                  </label>
+                </div>
+              </div>
 
               {/* Detection Mode Toggle */}
               <div
@@ -152,6 +178,7 @@ export default function PlankTimer() {
             onComplete={handleComplete}
             onError={handleError}
             detectionMode={detectionMode}
+            cameraMode={cameraMode}
           />
         )}
 
@@ -185,7 +212,7 @@ export default function PlankTimer() {
 
               <div className="bg-green-50 rounded-lg p-4 mb-6">
                 <p className="text-green-800 font-medium">
-                  You held your plank for {formatDuration(targetDuration)}!
+                  You held your plank for {formatDuration(actualElapsedTime)}!
                 </p>
                 <p className="text-green-700 text-sm mt-2">
                   Your video has been downloaded automatically.

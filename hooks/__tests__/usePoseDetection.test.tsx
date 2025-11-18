@@ -1,6 +1,7 @@
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { usePoseDetection } from '../usePoseDetection';
 import { PoseLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
+import { cleanupPoseLandmarker } from '@/lib/mediapipeLoader';
 
 // Mock MediaPipe
 jest.mock('@mediapipe/tasks-vision', () => ({
@@ -12,6 +13,33 @@ jest.mock('@mediapipe/tasks-vision', () => ({
   },
 }));
 
+// Mock mediapipeLoader to use our mock
+jest.mock('@/lib/mediapipeLoader', () => {
+  let mockInstance: any = null;
+  return {
+    loadPoseLandmarker: jest.fn(async () => {
+      if (!mockInstance) {
+        const { PoseLandmarker, FilesetResolver } = require('@mediapipe/tasks-vision');
+        // Simulate the real loading process to properly handle errors
+        const vision = await (FilesetResolver.forVisionTasks as jest.Mock)();
+        mockInstance = await (PoseLandmarker.createFromOptions as jest.Mock)(vision, {});
+      }
+      return mockInstance;
+    }),
+    cleanupPoseLandmarker: jest.fn(() => {
+      if (mockInstance && mockInstance.close) {
+        try {
+          mockInstance.close();
+        } catch (err) {
+          // Ignore cleanup errors
+        }
+      }
+      mockInstance = null;
+    }),
+    isPoseLandmarkerLoaded: jest.fn(() => mockInstance !== null),
+  };
+});
+
 describe('usePoseDetection', () => {
   let mockPoseLandmarker: any;
   let mockVideo: HTMLVideoElement;
@@ -19,23 +47,37 @@ describe('usePoseDetection', () => {
   beforeEach(() => {
     // Reset mocks
     jest.clearAllMocks();
+    cleanupPoseLandmarker();
 
     // Create mock video element with proper getters
     mockVideo = document.createElement('video');
     Object.defineProperty(mockVideo, 'videoWidth', { value: 640, writable: false });
     Object.defineProperty(mockVideo, 'videoHeight', { value: 480, writable: false });
 
-    // Create mock PoseLandmarker
+    // Create mock PoseLandmarker with valid plank landmarks
+    const createPlankLandmarks = () => {
+      const landmarks = Array(33).fill(null).map(() => ({
+        x: 0.5,
+        y: 0.5,
+        z: 0,
+        visibility: 0.9,
+      }));
+
+      // Set up a valid plank position (side view, horizontal body)
+      landmarks[0] = { x: 0.3, y: 0.4, z: 0, visibility: 0.9 };  // NOSE
+      landmarks[11] = { x: 0.3, y: 0.45, z: 0, visibility: 0.9 }; // LEFT_SHOULDER
+      landmarks[13] = { x: 0.3, y: 0.5, z: 0, visibility: 0.9 };  // LEFT_ELBOW
+      landmarks[15] = { x: 0.3, y: 0.55, z: 0, visibility: 0.9 }; // LEFT_WRIST
+      landmarks[23] = { x: 0.6, y: 0.45, z: 0, visibility: 0.9 }; // LEFT_HIP
+      landmarks[25] = { x: 0.8, y: 0.45, z: 0, visibility: 0.9 }; // LEFT_KNEE
+      landmarks[27] = { x: 0.95, y: 0.45, z: 0, visibility: 0.9 }; // LEFT_ANKLE
+
+      return landmarks;
+    };
+
     mockPoseLandmarker = {
       detectForVideo: jest.fn(() => ({
-        landmarks: [
-          Array(33).fill(null).map(() => ({
-            x: 0.5,
-            y: 0.5,
-            z: 0,
-            visibility: 0.9,
-          })),
-        ],
+        landmarks: [createPlankLandmarks()],
       })),
       close: jest.fn(),
     };
@@ -56,7 +98,7 @@ describe('usePoseDetection', () => {
       const { result } = renderHook(() => usePoseDetection());
 
       expect(result.current.isReady).toBe(false);
-      expect(result.current.isProcessing).toBe(false);
+      expect(result.current.isProcessing).toBe(true); // Starts processing when enableDetection defaults to true
       expect(result.current.error).toBe(null);
       expect(result.current.detectionResult).toBe(null);
     });
@@ -446,18 +488,19 @@ describe('usePoseDetection', () => {
   });
 
   describe('cleanup', () => {
-    it('should close PoseLandmarker on unmount', async () => {
-      const { unmount } = renderHook(() =>
+    it('should cleanup refs on unmount without closing landmarker', async () => {
+      const { result, unmount } = renderHook(() =>
         usePoseDetection({ enableDetection: true })
       );
 
       await waitFor(() => {
-        expect(PoseLandmarker.createFromOptions).toHaveBeenCalled();
+        expect(result.current.isReady).toBe(true);
       });
 
       unmount();
 
-      expect(mockPoseLandmarker.close).toHaveBeenCalled();
+      // Hook doesn't call close() to allow reuse - just cleans up refs
+      expect(mockPoseLandmarker.close).not.toHaveBeenCalled();
     });
 
     it('should handle cleanup errors gracefully', async () => {
