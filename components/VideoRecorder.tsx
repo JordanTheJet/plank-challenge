@@ -323,7 +323,8 @@ function VideoRecorder({ targetDuration, onComplete, onError, detectionMode = fa
         drawTimerOverlayMemoized(ctx, canvas.width, canvas.height, elapsed, targetDuration);
 
         // Check if target duration reached (capture final frame at exact target)
-        if (elapsed >= targetDuration && !detectionMode) {
+        // Use > instead of >= to ensure we record the full final second
+        if (elapsed > targetDuration && !detectionMode) {
           // Only auto-stop for manual mode; detection mode stops when plank lost
           const finalFrame = canvas.toDataURL('image/png');
           setFinalFrameData(finalFrame);
