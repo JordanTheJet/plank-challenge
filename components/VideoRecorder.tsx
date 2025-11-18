@@ -13,6 +13,7 @@ interface VideoRecorderProps {
   onComplete: () => void;
   onError: (error: string) => void;
   detectionMode?: boolean;
+  cameraMode?: 'user' | 'environment';
 }
 
 type RecordingPhase = 'preparing' | 'countdown' | 'recording' | 'preview' | 'completed' | 'detecting';
@@ -47,7 +48,7 @@ const drawTimerOverlayMemoized = (
   ctx.fillText(targetText, width / 2, height * 0.05 + fontSize * 1.3);
 };
 
-function VideoRecorder({ targetDuration, onComplete, onError, detectionMode = false }: VideoRecorderProps) {
+function VideoRecorder({ targetDuration, onComplete, onError, detectionMode = false, cameraMode = 'environment' }: VideoRecorderProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -57,7 +58,7 @@ function VideoRecorder({ targetDuration, onComplete, onError, detectionMode = fa
   const canvasContextRef = useRef<CanvasRenderingContext2D | null>(null); // Reuse canvas context
 
   const [phase, setPhase] = useState<RecordingPhase>('preparing');
-  const [countdown, setCountdown] = useState(3);
+  const [countdown, setCountdown] = useState(10);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
@@ -123,7 +124,7 @@ function VideoRecorder({ targetDuration, onComplete, onError, detectionMode = fa
 
     async function setupCamera() {
       try {
-        const stream = await getCameraStream();
+        const stream = await getCameraStream(cameraMode);
 
         if (!mounted) {
           stream.getTracks().forEach(track => track.stop());
@@ -192,7 +193,7 @@ function VideoRecorder({ targetDuration, onComplete, onError, detectionMode = fa
         recorderRef.current = null;
       }
     };
-  }, [onError, detectionMode]);
+  }, [onError, detectionMode, cameraMode]);
 
   // Handle countdown
   useEffect(() => {
@@ -501,7 +502,7 @@ function VideoRecorder({ targetDuration, onComplete, onError, detectionMode = fa
     } else {
       setPhase('countdown');
     }
-    setCountdown(3);
+    setCountdown(10);
     setElapsedTime(0);
     setVideoBlob(null);
     setFinalFrameData(null);

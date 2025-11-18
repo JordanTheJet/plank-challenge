@@ -12,6 +12,7 @@ export default function PlankTimer() {
   const [appState, setAppState] = useState<AppState>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [detectionMode, setDetectionMode] = useState(false);
+  const [cameraMode, setCameraMode] = useState<'user' | 'environment'>('environment');
 
   // Memoize calculations to avoid unnecessary recomputation
   const targetDuration = useMemo(() => calculateTargetDuration(), []);
@@ -48,10 +49,10 @@ export default function PlankTimer() {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-5xl font-bold text-gray-800 mb-2">
-            Plank Timer
+            Plank Challenge
           </h1>
           <p className="text-xl text-gray-600">
-            Day {dayNumber} Challenge
+            Day {dayNumber}
           </p>
         </div>
 
@@ -90,6 +91,33 @@ export default function PlankTimer() {
                   <p className="text-red-600 text-sm font-medium">{errorMessage}</p>
                 </div>
               )}
+
+              {/* Camera Selection Slider */}
+              <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <div className="flex-1">
+                    <div className="font-semibold text-gray-800">Camera</div>
+                    <div className="text-xs text-gray-600 mt-1">
+                      {cameraMode === 'environment' ? 'Back Camera' : 'Front Camera'}
+                    </div>
+                  </div>
+                  <div className="relative inline-block w-14 h-7 ml-3">
+                    <input
+                      type="checkbox"
+                      checked={cameraMode === 'user'}
+                      onChange={(e) => setCameraMode(e.target.checked ? 'user' : 'environment')}
+                      className="sr-only peer"
+                      id="camera-toggle"
+                    />
+                    <label
+                      htmlFor="camera-toggle"
+                      className="absolute cursor-pointer inset-0 bg-blue-400 rounded-full peer-checked:bg-purple-400 transition-colors"
+                    >
+                      <span className="absolute left-1 top-1 w-5 h-5 bg-white rounded-full transition-transform peer-checked:translate-x-7"></span>
+                    </label>
+                  </div>
+                </label>
+              </div>
 
               {/* Detection Mode Toggle */}
               <div
@@ -152,6 +180,7 @@ export default function PlankTimer() {
             onComplete={handleComplete}
             onError={handleError}
             detectionMode={detectionMode}
+            cameraMode={cameraMode}
           />
         )}
 
