@@ -321,40 +321,52 @@ export function drawDetectionFeedback(
     ctx.fillText(text, padding * 2, padding * 1.5 + i * lineHeight);
   }
 
-  // Draw confidence meter at bottom right (with more padding to avoid cutoff)
-  const meterWidth = Math.min(200, canvasWidth * 0.3);
-  const meterHeight = 20;
-  const meterX = canvasWidth - meterWidth - padding * 2;
-  const meterY = canvasHeight - meterHeight - padding * 3;
+  // Draw confidence meter at bottom right (compact design)
+  const meterWidth = Math.min(150, canvasWidth * 0.25);
+  const meterHeight = 18;
+  const labelFontSize = fontSize * 0.7;
+  const percentFontSize = fontSize * 0.75;
 
-  // Background
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-  ctx.fillRect(meterX - 10, meterY - 10, meterWidth + 20, meterHeight + 30);
+  // Calculate text width to size background properly
+  ctx.font = `${labelFontSize}px sans-serif`;
+  const labelWidth = ctx.measureText('Detection:').width;
+
+  ctx.font = `bold ${percentFontSize}px sans-serif`;
+  const percentWidth = ctx.measureText('100%').width;
+
+  const totalWidth = Math.max(meterWidth, labelWidth + 10, percentWidth + 10);
+  const meterX = canvasWidth - totalWidth - padding * 3;
+  const meterY = canvasHeight - meterHeight - padding * 4;
+
+  // Background (sized to fit content)
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+  ctx.fillRect(meterX - padding, meterY - padding - labelFontSize - 8, totalWidth + padding * 2, meterHeight + labelFontSize + padding * 2 + 8);
 
   // Label
-  ctx.font = `${fontSize * 0.8}px sans-serif`;
+  ctx.font = `${labelFontSize}px sans-serif`;
   ctx.fillStyle = '#FFFFFF';
   ctx.textAlign = 'left';
-  ctx.fillText('Detection:', meterX, meterY - 5);
+  ctx.fillText('Detection:', meterX, meterY - 8);
 
   // Meter background
   ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-  ctx.fillRect(meterX, meterY + 15, meterWidth, meterHeight);
+  ctx.fillRect(meterX, meterY, meterWidth, meterHeight);
 
   // Meter fill
   const fillWidth = (result.confidence / 100) * meterWidth;
   const meterColor = result.confidence >= 80 ? '#00FF00' :
                      result.confidence >= 60 ? '#FFFF00' : '#FF0000';
   ctx.fillStyle = meterColor;
-  ctx.fillRect(meterX, meterY + 15, fillWidth, meterHeight);
+  ctx.fillRect(meterX, meterY, fillWidth, meterHeight);
 
-  // Confidence percentage
-  ctx.font = `bold ${fontSize * 0.9}px sans-serif`;
-  ctx.fillStyle = '#FFFFFF';
+  // Confidence percentage (centered in meter)
+  ctx.font = `bold ${percentFontSize}px sans-serif`;
+  ctx.fillStyle = '#000000';
   ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
   ctx.fillText(
     `${Math.round(result.confidence)}%`,
     meterX + meterWidth / 2,
-    meterY + 15 + meterHeight / 2 + 2
+    meterY + meterHeight / 2
   );
 }
