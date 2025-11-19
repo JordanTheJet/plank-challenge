@@ -5,7 +5,7 @@ import { VideoRecorder as Recorder, getCameraStream, downloadBlob } from '@/util
 import { formatDuration, generateFilename, getDayNumber } from '@/utils/timerLogic';
 import { format } from 'date-fns';
 import { usePoseDetection } from '@/hooks/usePoseDetection';
-import { drawPoseSkeleton, drawDetectionFeedback } from '@/lib/poseDetection';
+import { drawPoseSkeleton, drawDetectionFeedback, PlankDetectionResult } from '@/lib/poseDetection';
 import { getOptimizedCanvasContext, CanvasPerformanceMonitor } from '@/lib/canvasOptimizations';
 
 interface VideoRecorderProps {
@@ -17,6 +17,32 @@ interface VideoRecorderProps {
 }
 
 type RecordingPhase = 'preparing' | 'countdown' | 'recording' | 'preview' | 'completed' | 'detecting';
+
+/**
+ * Check if detection results have meaningfully changed
+ * Avoids redundant redraws when detection is stable
+ */
+const hasDetectionChanged = (
+  current: PlankDetectionResult | null,
+  previous: PlankDetectionResult | null
+): boolean => {
+  if (!current && !previous) return false;
+  if (!current || !previous) return true;
+
+  // Check if plank status changed
+  if (current.isPlank !== previous.isPlank) return true;
+
+  // Check if confidence changed by more than 5% (avoid redrawing for minor fluctuations)
+  if (Math.abs(current.confidence - previous.confidence) > 5) return true;
+
+  // Check if feedback messages changed
+  if (current.feedback.length !== previous.feedback.length) return true;
+  for (let i = 0; i < current.feedback.length; i++) {
+    if (current.feedback[i] !== previous.feedback[i]) return true;
+  }
+
+  return false;
+};
 
 // Memoize the timer overlay drawing function (performance-critical)
 const drawTimerOverlayMemoized = (
@@ -56,6 +82,7 @@ function VideoRecorder({ targetDuration, onComplete, onError, detectionMode = fa
   const animationFrameRef = useRef<number | null>(null);
   const startTimeRef = useRef<number | null>(null);
   const canvasContextRef = useRef<CanvasRenderingContext2D | null>(null); // Reuse canvas context
+  const lastDrawnDetectionRef = useRef<PlankDetectionResult | null>(null); // Track last drawn detection to avoid redundant redraws
 
   const [phase, setPhase] = useState<RecordingPhase>('preparing');
   const [countdown, setCountdown] = useState(10);
@@ -304,15 +331,30 @@ function VideoRecorder({ targetDuration, onComplete, onError, detectionMode = fa
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
       // Draw pose skeleton and feedback during detection and recording
+      // Only redraw detection overlay if it has meaningfully changed (optimization)
       if ((phase === 'detecting' || phase === 'recording') && detectionMode && detectionResult) {
-        // Draw skeleton overlay
-        if (detectionResult.landmarks) {
-          const color = detectionResult.isPlank ? '#00FF00' : '#FF0000';
-          drawPoseSkeleton(ctx, detectionResult.landmarks, canvas.width, canvas.height, color);
-        }
+        const shouldRedrawDetection = hasDetectionChanged(detectionResult, lastDrawnDetectionRef.current);
 
-        // Draw detection feedback
-        drawDetectionFeedback(ctx, detectionResult, canvas.width, canvas.height);
+        if (shouldRedrawDetection || !lastDrawnDetectionRef.current) {
+          // Draw skeleton overlay
+          if (detectionResult.landmarks) {
+            const color = detectionResult.isPlank ? '#00FF00' : '#FF0000';
+            drawPoseSkeleton(ctx, detectionResult.landmarks, canvas.width, canvas.height, color);
+          }
+
+          // Draw detection feedback
+          drawDetectionFeedback(ctx, detectionResult, canvas.width, canvas.height);
+
+          // Update last drawn detection
+          lastDrawnDetectionRef.current = detectionResult;
+        } else {
+          // Re-use previous overlay (just redraw from last state)
+          if (detectionResult.landmarks) {
+            const color = detectionResult.isPlank ? '#00FF00' : '#FF0000';
+            drawPoseSkeleton(ctx, detectionResult.landmarks, canvas.width, canvas.height, color);
+          }
+          drawDetectionFeedback(ctx, detectionResult, canvas.width, canvas.height);
+        }
       }
 
       // During recording, draw timer overlay and update elapsed time

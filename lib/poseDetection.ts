@@ -44,6 +44,7 @@ export const POSE_LANDMARKS = {
 
 /**
  * Calculate angle between three points (in degrees)
+ * Uses vector dot product formula for accurate angle calculation
  * @param a First point
  * @param b Middle point (vertex)
  * @param c Last point
@@ -53,43 +54,126 @@ export function calculateAngle(
   b: NormalizedLandmark,
   c: NormalizedLandmark
 ): number {
-  const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
-  let angle = Math.abs((radians * 180.0) / Math.PI);
+  // Create vectors from vertex b to points a and c
+  const ba = { x: a.x - b.x, y: a.y - b.y };
+  const bc = { x: c.x - b.x, y: c.y - b.y };
 
-  if (angle > 180.0) {
-    angle = 360 - angle;
+  // Calculate dot product: ba · bc = |ba| * |bc| * cos(θ)
+  const dotProduct = ba.x * bc.x + ba.y * bc.y;
+
+  // Calculate magnitudes of vectors
+  const magnitudeBA = Math.sqrt(ba.x * ba.x + ba.y * ba.y);
+  const magnitudeBC = Math.sqrt(bc.x * bc.x + bc.y * bc.y);
+
+  // Avoid division by zero
+  if (magnitudeBA === 0 || magnitudeBC === 0) {
+    return 0;
   }
 
-  return angle;
+  // Calculate cosine of angle: cos(θ) = (ba · bc) / (|ba| * |bc|)
+  const cosAngle = dotProduct / (magnitudeBA * magnitudeBC);
+
+  // Clamp to [-1, 1] to handle floating-point precision errors
+  const clampedCosAngle = Math.max(-1, Math.min(1, cosAngle));
+
+  // Calculate angle in radians using arccosine, then convert to degrees
+  const angleRadians = Math.acos(clampedCosAngle);
+  const angleDegrees = (angleRadians * 180.0) / Math.PI;
+
+  return angleDegrees;
 }
 
 /**
- * Check if key landmarks are visible with sufficient confidence
- * More forgiving for side-view plank
+ * Calculate co-linearity score for three points
+ * Returns a value from 0 (perfect line) to 1 (not linear)
+ * Used to check if shoulder-hip-ankle form a straight line (core stability)
+ * @param a First point
+ * @param b Middle point
+ * @param c Last point
  */
-export function areLandmarksVisible(
+export function calculateColinearity(
+  a: NormalizedLandmark,
+  b: NormalizedLandmark,
+  c: NormalizedLandmark
+): number {
+  // Calculate the cross product to measure deviation from a straight line
+  // For perfectly co-linear points, cross product = 0
+  const dx1 = b.x - a.x;
+  const dy1 = b.y - a.y;
+  const dx2 = c.x - b.x;
+  const dy2 = c.y - b.y;
+
+  // Cross product gives the area of the parallelogram formed by the vectors
+  const crossProduct = Math.abs(dx1 * dy2 - dy1 * dx2);
+
+  // Normalize by the distance between first and last point
+  const totalDistance = Math.sqrt((c.x - a.x) ** 2 + (c.y - a.y) ** 2);
+
+  if (totalDistance === 0) return 1; // Invalid case
+
+  // Return normalized deviation (0 = perfect line, higher = more curved)
+  // Multiply by 2 to scale to roughly 0-1 range for typical body positions
+  return Math.min(1, crossProduct / totalDistance * 2);
+}
+
+/**
+ * Check which sides (left/right) have visible landmarks
+ * Returns visibility status for both sides
+ */
+export function checkSideVisibility(
   landmarks: NormalizedLandmark[],
   minVisibility: number = 0.3
-): boolean {
-  // For side-view plank, we need at least one side visible (left or right)
-  const criticalIndices = [
-    POSE_LANDMARKS.NOSE,
+): { left: boolean; right: boolean } {
+  const leftIndices = [
     POSE_LANDMARKS.LEFT_SHOULDER,
     POSE_LANDMARKS.LEFT_HIP,
     POSE_LANDMARKS.LEFT_KNEE,
     POSE_LANDMARKS.LEFT_ANKLE,
   ];
 
-  // All critical landmarks must be visible for side view
-  return criticalIndices.every(
+  const rightIndices = [
+    POSE_LANDMARKS.RIGHT_SHOULDER,
+    POSE_LANDMARKS.RIGHT_HIP,
+    POSE_LANDMARKS.RIGHT_KNEE,
+    POSE_LANDMARKS.RIGHT_ANKLE,
+  ];
+
+  const leftVisible = leftIndices.every(
     (idx) => landmarks[idx] && landmarks[idx].visibility && landmarks[idx].visibility >= minVisibility
   );
+
+  const rightVisible = rightIndices.every(
+    (idx) => landmarks[idx] && landmarks[idx].visibility && landmarks[idx].visibility >= minVisibility
+  );
+
+  return { left: leftVisible, right: rightVisible };
+}
+
+/**
+ * Check if key landmarks are visible with sufficient confidence
+ * More forgiving for side-view plank - at least one side must be visible
+ */
+export function areLandmarksVisible(
+  landmarks: NormalizedLandmark[],
+  minVisibility: number = 0.3
+): boolean {
+  // Check nose visibility
+  const noseVisible = landmarks[POSE_LANDMARKS.NOSE] &&
+                      landmarks[POSE_LANDMARKS.NOSE].visibility &&
+                      landmarks[POSE_LANDMARKS.NOSE].visibility >= minVisibility;
+
+  if (!noseVisible) return false;
+
+  // Check if at least one side is visible
+  const sides = checkSideVisibility(landmarks, minVisibility);
+  return sides.left || sides.right;
 }
 
 /**
  * Detect if the pose represents a valid plank position
  * SIDE VIEW (LANDSCAPE): User is in plank position, camera captures from the side
  * Camera sees: Profile view with shoulders, hips, knees, ankles forming straight line
+ * Supports bilateral detection - averages angles from both sides when both are visible
  * Returns detection result with confidence and feedback
  */
 export function detectPlankPosition(landmarks: NormalizedLandmark[]): PlankDetectionResult {
@@ -106,8 +190,12 @@ export function detectPlankPosition(landmarks: NormalizedLandmark[]): PlankDetec
   const feedback: string[] = [];
   let confidence = 100;
 
-  // Get key landmarks (use left side for side view, as it's typically more visible)
+  // Check which sides are visible for bilateral detection
+  const sides = checkSideVisibility(landmarks);
+
+  // Get key landmarks for both sides
   const nose = landmarks[POSE_LANDMARKS.NOSE];
+
   const leftShoulder = landmarks[POSE_LANDMARKS.LEFT_SHOULDER];
   const leftElbow = landmarks[POSE_LANDMARKS.LEFT_ELBOW];
   const leftWrist = landmarks[POSE_LANDMARKS.LEFT_WRIST];
@@ -115,38 +203,103 @@ export function detectPlankPosition(landmarks: NormalizedLandmark[]): PlankDetec
   const leftKnee = landmarks[POSE_LANDMARKS.LEFT_KNEE];
   const leftAnkle = landmarks[POSE_LANDMARKS.LEFT_ANKLE];
 
+  const rightShoulder = landmarks[POSE_LANDMARKS.RIGHT_SHOULDER];
+  const rightElbow = landmarks[POSE_LANDMARKS.RIGHT_ELBOW];
+  const rightWrist = landmarks[POSE_LANDMARKS.RIGHT_WRIST];
+  const rightHip = landmarks[POSE_LANDMARKS.RIGHT_HIP];
+  const rightKnee = landmarks[POSE_LANDMARKS.RIGHT_KNEE];
+  const rightAnkle = landmarks[POSE_LANDMARKS.RIGHT_ANKLE];
+
   // SIDE VIEW DETECTION: Check body alignment from profile
   // In proper plank, shoulder-hip-ankle should form a straight line (160-180°)
+  // Use bilateral detection when both sides are visible for more robust measurements
 
   // 1. CHECK BODY ALIGNMENT (most important for side view)
-  // Calculate angle between shoulder, hip, and ankle
-  const bodyAngle = calculateAngle(leftShoulder, leftHip, leftAnkle);
+  // Calculate angle between shoulder, hip, and ankle (with bilateral averaging)
+  let bodyAngle: number;
+  let colinearityScore: number;
 
-  if (bodyAngle < 150) {
+  if (sides.left && sides.right) {
+    // Both sides visible - average the angles for more stable detection
+    const leftBodyAngle = calculateAngle(leftShoulder, leftHip, leftAnkle);
+    const rightBodyAngle = calculateAngle(rightShoulder, rightHip, rightAnkle);
+    bodyAngle = (leftBodyAngle + rightBodyAngle) / 2;
+
+    // Average co-linearity scores for both sides
+    const leftColinearity = calculateColinearity(leftShoulder, leftHip, leftAnkle);
+    const rightColinearity = calculateColinearity(rightShoulder, rightHip, rightAnkle);
+    colinearityScore = (leftColinearity + rightColinearity) / 2;
+  } else if (sides.left) {
+    bodyAngle = calculateAngle(leftShoulder, leftHip, leftAnkle);
+    colinearityScore = calculateColinearity(leftShoulder, leftHip, leftAnkle);
+  } else {
+    bodyAngle = calculateAngle(rightShoulder, rightHip, rightAnkle);
+    colinearityScore = calculateColinearity(rightShoulder, rightHip, rightAnkle);
+  }
+
+  // Check co-linearity (core stability) - stricter requirement
+  // Score < 0.15 indicates good straight line formation
+  if (colinearityScore > 0.25) {
+    feedback.push('Keep your core tight - straighten your body');
+    confidence -= 30;
+  } else if (colinearityScore > 0.15) {
+    feedback.push('Minor body curve - engage core more');
+    confidence -= 15;
+  }
+
+  // Tightened angle thresholds for more accurate detection
+  if (bodyAngle < 155) {
     feedback.push('Lift your hips higher');
     confidence -= 35;
-  } else if (bodyAngle > 195) {
+  } else if (bodyAngle > 190) {
     feedback.push('Lower your hips - avoid sagging');
     confidence -= 35;
-  } else if (bodyAngle < 160 || bodyAngle > 185) {
+  } else if (bodyAngle < 165 || bodyAngle > 180) {
     feedback.push('Adjust hips for straighter alignment');
     confidence -= 20;
   }
 
   // 2. CHECK LEGS ARE STRAIGHT
-  // Knee angle should be 160-180° (straight leg)
-  const kneeAngle = calculateAngle(leftHip, leftKnee, leftAnkle);
+  // Knee angle should be 165-180° (straight leg, with bilateral averaging) - tightened threshold
+  let kneeAngle: number;
+  if (sides.left && sides.right) {
+    const leftKneeAngle = calculateAngle(leftHip, leftKnee, leftAnkle);
+    const rightKneeAngle = calculateAngle(rightHip, rightKnee, rightAnkle);
+    kneeAngle = (leftKneeAngle + rightKneeAngle) / 2;
+  } else if (sides.left) {
+    kneeAngle = calculateAngle(leftHip, leftKnee, leftAnkle);
+  } else {
+    kneeAngle = calculateAngle(rightHip, rightKnee, rightAnkle);
+  }
 
-  if (kneeAngle < 155) {
-    feedback.push('Straighten your legs');
+  if (kneeAngle < 160) {
+    feedback.push('Straighten your legs completely');
     confidence -= 25;
-  } else if (kneeAngle < 165) {
+  } else if (kneeAngle < 170) {
+    feedback.push('Legs could be straighter');
     confidence -= 10;
   }
 
   // 3. CHECK ARM POSITION
-  // Elbow should be roughly below shoulder (supporting weight)
-  const elbowAngle = calculateAngle(leftShoulder, leftElbow, leftWrist);
+  // Elbow should be roughly below shoulder (supporting weight, with bilateral averaging)
+  let elbowAngle: number;
+  let elbowShoulderDistance: number;
+
+  if (sides.left && sides.right) {
+    const leftElbowAngle = calculateAngle(leftShoulder, leftElbow, leftWrist);
+    const rightElbowAngle = calculateAngle(rightShoulder, rightElbow, rightWrist);
+    elbowAngle = (leftElbowAngle + rightElbowAngle) / 2;
+
+    const leftElbowDist = Math.abs(leftElbow.x - leftShoulder.x);
+    const rightElbowDist = Math.abs(rightElbow.x - rightShoulder.x);
+    elbowShoulderDistance = (leftElbowDist + rightElbowDist) / 2;
+  } else if (sides.left) {
+    elbowAngle = calculateAngle(leftShoulder, leftElbow, leftWrist);
+    elbowShoulderDistance = Math.abs(leftElbow.x - leftShoulder.x);
+  } else {
+    elbowAngle = calculateAngle(rightShoulder, rightElbow, rightWrist);
+    elbowShoulderDistance = Math.abs(rightElbow.x - rightShoulder.x);
+  }
 
   // For forearm plank: 70-110° (bent)
   // For straight-arm plank: 160-200° (straight)
@@ -159,7 +312,6 @@ export function detectPlankPosition(landmarks: NormalizedLandmark[]): PlankDetec
   }
 
   // Check elbow is positioned correctly (should be roughly under shoulder)
-  const elbowShoulderDistance = Math.abs(leftElbow.x - leftShoulder.x);
 
   if (elbowShoulderDistance > 0.15) {
     feedback.push('Position arms under shoulders');
@@ -167,8 +319,17 @@ export function detectPlankPosition(landmarks: NormalizedLandmark[]): PlankDetec
   }
 
   // 4. CHECK HEAD/NECK POSITION
-  // Head should be in neutral position (not drooping or too high)
-  const shoulderNoseDistance = Math.abs(leftShoulder.y - nose.y);
+  // Head should be in neutral position (not drooping or too high, with bilateral averaging)
+  let shoulderNoseDistance: number;
+  if (sides.left && sides.right) {
+    const leftShoulderNoseDist = Math.abs(leftShoulder.y - nose.y);
+    const rightShoulderNoseDist = Math.abs(rightShoulder.y - nose.y);
+    shoulderNoseDistance = (leftShoulderNoseDist + rightShoulderNoseDist) / 2;
+  } else if (sides.left) {
+    shoulderNoseDistance = Math.abs(leftShoulder.y - nose.y);
+  } else {
+    shoulderNoseDistance = Math.abs(rightShoulder.y - nose.y);
+  }
 
   if (shoulderNoseDistance > 0.15) {
     feedback.push('Keep head in neutral position');
@@ -176,8 +337,17 @@ export function detectPlankPosition(landmarks: NormalizedLandmark[]): PlankDetec
   }
 
   // 5. CHECK BODY IS HORIZONTAL
-  // Shoulders and hips should be at similar Y coordinates (horizontal alignment)
-  const shoulderHipLevelness = Math.abs(leftShoulder.y - leftHip.y);
+  // Shoulders and hips should be at similar Y coordinates (horizontal alignment, with bilateral averaging)
+  let shoulderHipLevelness: number;
+  if (sides.left && sides.right) {
+    const leftLevelness = Math.abs(leftShoulder.y - leftHip.y);
+    const rightLevelness = Math.abs(rightShoulder.y - rightHip.y);
+    shoulderHipLevelness = (leftLevelness + rightLevelness) / 2;
+  } else if (sides.left) {
+    shoulderHipLevelness = Math.abs(leftShoulder.y - leftHip.y);
+  } else {
+    shoulderHipLevelness = Math.abs(rightShoulder.y - rightHip.y);
+  }
 
   if (shoulderHipLevelness > 0.15) {
     feedback.push('Keep body parallel to ground');
@@ -185,17 +355,24 @@ export function detectPlankPosition(landmarks: NormalizedLandmark[]): PlankDetec
   }
 
   // 6. CHECK BODY POSITIONING IN FRAME
-  // Body should be well-centered and visible
-  const avgBodyY = (leftShoulder.y + leftHip.y + leftAnkle.y) / 3;
+  // Body should be well-centered and visible (use available side(s))
+  let avgBodyY: number;
+  if (sides.left && sides.right) {
+    avgBodyY = (leftShoulder.y + rightShoulder.y + leftHip.y + rightHip.y + leftAnkle.y + rightAnkle.y) / 6;
+  } else if (sides.left) {
+    avgBodyY = (leftShoulder.y + leftHip.y + leftAnkle.y) / 3;
+  } else {
+    avgBodyY = (rightShoulder.y + rightHip.y + rightAnkle.y) / 3;
+  }
 
   if (avgBodyY < 0.25 || avgBodyY > 0.75) {
     feedback.push('Center yourself in frame');
     confidence -= 10;
   }
 
-  // Determine if it's a valid plank
-  // Require at least 55% confidence to consider it a plank
-  const isPlank = confidence >= 55 && feedback.length <= 3;
+  // Determine if it's a valid plank (stricter threshold for better accuracy)
+  // Require at least 60% confidence and max 3 feedback items to consider it a plank
+  const isPlank = confidence >= 60 && feedback.length <= 3;
 
   // Add positive feedback if plank is good
   if (isPlank && confidence >= 85) {
@@ -217,6 +394,7 @@ export function detectPlankPosition(landmarks: NormalizedLandmark[]): PlankDetec
 /**
  * Draw pose skeleton on canvas
  * Shows body landmarks and connections for visual feedback
+ * Optimized with batched drawing operations for better performance
  */
 export function drawPoseSkeleton(
   ctx: CanvasRenderingContext2D,
@@ -252,9 +430,10 @@ export function drawPoseSkeleton(
     [POSE_LANDMARKS.NOSE, POSE_LANDMARKS.RIGHT_SHOULDER],
   ];
 
-  // Draw connections
+  // Batch all connection drawing into a single path for better performance
   ctx.strokeStyle = color;
   ctx.lineWidth = 3;
+  ctx.beginPath();
 
   for (let i = 0; i < POSE_CONNECTIONS.length; i++) {
     const [startIdx, endIdx] = POSE_CONNECTIONS[i];
@@ -264,14 +443,15 @@ export function drawPoseSkeleton(
     if (startLandmark && endLandmark &&
         startLandmark.visibility && startLandmark.visibility > 0.5 &&
         endLandmark.visibility && endLandmark.visibility > 0.5) {
-      ctx.beginPath();
       ctx.moveTo(startLandmark.x * canvasWidth, startLandmark.y * canvasHeight);
       ctx.lineTo(endLandmark.x * canvasWidth, endLandmark.y * canvasHeight);
-      ctx.stroke();
     }
   }
 
-  // Draw landmarks
+  // Single stroke call for all connections (much faster than individual strokes)
+  ctx.stroke();
+
+  // Batch all landmark drawing for better performance
   ctx.fillStyle = color;
 
   for (let i = 0; i < landmarks.length; i++) {

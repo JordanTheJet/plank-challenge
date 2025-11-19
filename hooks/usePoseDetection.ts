@@ -4,9 +4,39 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import type { PoseLandmarker } from '@mediapipe/tasks-vision';
+import type { PoseLandmarker, NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { PlankDetectionResult, detectPlankPosition } from '@/lib/poseDetection';
 import { loadPoseLandmarker, cleanupPoseLandmarker } from '@/lib/mediapipeLoader';
+
+/**
+ * Exponential Moving Average (EMA) filter for landmark smoothing
+ * Reduces jitter while maintaining responsiveness to real movement
+ * @param alpha - Smoothing factor (0-1): higher = more responsive, lower = smoother
+ */
+function smoothLandmarks(
+  currentLandmarks: NormalizedLandmark[],
+  previousLandmarks: NormalizedLandmark[] | null,
+  alpha: number = 0.3
+): NormalizedLandmark[] {
+  if (!previousLandmarks) {
+    return currentLandmarks;
+  }
+
+  return currentLandmarks.map((current, index) => {
+    const previous = previousLandmarks[index];
+    if (!previous) {
+      return current;
+    }
+
+    // Apply EMA filter: smoothed = alpha * current + (1 - alpha) * previous
+    return {
+      x: alpha * current.x + (1 - alpha) * previous.x,
+      y: alpha * current.y + (1 - alpha) * previous.y,
+      z: alpha * current.z + (1 - alpha) * previous.z,
+      visibility: current.visibility, // Don't smooth visibility (binary property)
+    };
+  });
+}
 
 export interface UsePoseDetectionOptions {
   onPlankDetected?: () => void;
@@ -14,6 +44,9 @@ export interface UsePoseDetectionOptions {
   enableDetection?: boolean;
   stabilityFrames?: number; // Number of consecutive frames needed to confirm detection
   gracePeriodFrames?: number; // Number of frames to wait before confirming plank lost
+  adaptiveFps?: boolean; // Enable adaptive FPS based on device performance (default: true)
+  minFps?: number; // Minimum FPS when under load (default: 5)
+  maxFps?: number; // Maximum FPS when performing well (default: 15)
 }
 
 export interface UsePoseDetectionReturn {
@@ -31,6 +64,9 @@ export function usePoseDetection({
   enableDetection = true,
   stabilityFrames = 5,
   gracePeriodFrames = 10,
+  adaptiveFps = true,
+  minFps = 5,
+  maxFps = 15,
 }: UsePoseDetectionOptions = {}): UsePoseDetectionReturn {
   const [isReady, setIsReady] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -43,6 +79,12 @@ export function usePoseDetection({
   const isPlankActiveRef = useRef(false);
   const lastDetectionTimeRef = useRef(0);
   const lastResultRef = useRef<any>(null); // Store last result for cleanup
+  const smoothedLandmarksRef = useRef<NormalizedLandmark[] | null>(null); // Store smoothed landmarks for EMA filter
+
+  // Adaptive FPS state
+  const detectionDurationsRef = useRef<number[]>([]); // Store recent detection durations
+  const currentFpsRef = useRef<number>(maxFps); // Current target FPS
+  const frameTimeThresholdRef = useRef<number>(1000 / maxFps); // Current frame time threshold in ms
 
   // Initialize MediaPipe Pose (with dynamic loading for code splitting)
   useEffect(() => {
@@ -95,8 +137,11 @@ export function usePoseDetection({
     try {
       const now = performance.now();
 
-      // Throttle detection to ~10 FPS for better stability (reduces memory pressure)
-      if (now - lastDetectionTimeRef.current < 100) return;
+      // Adaptive FPS throttling based on device performance
+      const frameTimeSinceLastDetection = now - lastDetectionTimeRef.current;
+      if (frameTimeSinceLastDetection < frameTimeThresholdRef.current) return;
+
+      const detectionStartTime = performance.now();
       lastDetectionTimeRef.current = now;
 
       // Clean up previous result to prevent memory accumulation
@@ -113,10 +158,15 @@ export function usePoseDetection({
 
       if (result.landmarks && result.landmarks.length > 0) {
         // Get first person's landmarks
-        const landmarks = result.landmarks[0];
+        const rawLandmarks = result.landmarks[0];
 
-        // Detect if it's a plank position
-        const plankResult = detectPlankPosition(landmarks);
+        // Apply temporal smoothing to reduce jitter
+        // EMA filter with alpha=0.3 balances smoothness and responsiveness
+        const smoothedLandmarks = smoothLandmarks(rawLandmarks, smoothedLandmarksRef.current, 0.3);
+        smoothedLandmarksRef.current = smoothedLandmarks;
+
+        // Detect if it's a plank position using smoothed landmarks
+        const plankResult = detectPlankPosition(smoothedLandmarks);
         setDetectionResult(plankResult);
 
         // Handle plank detection with stability filter
@@ -165,6 +215,46 @@ export function usePoseDetection({
           onPlankLost?.();
         }
       }
+
+      // Adaptive FPS: Adjust frame rate based on detection performance
+      if (adaptiveFps) {
+        const detectionDuration = performance.now() - detectionStartTime;
+        detectionDurationsRef.current.push(detectionDuration);
+
+        // Keep only last 10 measurements for rolling average
+        if (detectionDurationsRef.current.length > 10) {
+          detectionDurationsRef.current.shift();
+        }
+
+        // Calculate average detection time every 10 frames
+        if (detectionDurationsRef.current.length === 10) {
+          const avgDetectionTime = detectionDurationsRef.current.reduce((a, b) => a + b, 0) / 10;
+
+          // Adjust FPS based on average detection time
+          // If detection is taking too long, reduce FPS
+          // If detection is fast, increase FPS (up to maxFps)
+          if (avgDetectionTime > 80) {
+            // Detection taking >80ms, reduce to minFps
+            currentFpsRef.current = minFps;
+          } else if (avgDetectionTime > 50) {
+            // Detection taking >50ms, reduce FPS moderately
+            currentFpsRef.current = Math.max(minFps, Math.floor(maxFps * 0.6));
+          } else if (avgDetectionTime < 30) {
+            // Detection fast, increase to maxFps
+            currentFpsRef.current = maxFps;
+          } else {
+            // Detection moderate, use middle FPS
+            currentFpsRef.current = Math.floor((minFps + maxFps) / 2);
+          }
+
+          frameTimeThresholdRef.current = 1000 / currentFpsRef.current;
+
+          // Log FPS adjustment in development
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`Adaptive FPS: ${currentFpsRef.current} FPS (avg detection: ${avgDetectionTime.toFixed(1)}ms)`);
+          }
+        }
+      }
     } catch (err: any) {
       console.error('Error during pose detection:', err);
 
@@ -180,7 +270,7 @@ export function usePoseDetection({
 
       setError('Detection error occurred');
     }
-  }, [isReady, onPlankDetected, onPlankLost, stabilityFrames, gracePeriodFrames]);
+  }, [isReady, onPlankDetected, onPlankLost, stabilityFrames, gracePeriodFrames, adaptiveFps, minFps, maxFps]);
 
   // Reset detection state
   const reset = useCallback(() => {
@@ -194,9 +284,17 @@ export function usePoseDetection({
       lastResultRef.current = null;
     }
 
+    // Reset smoothed landmarks for fresh start
+    smoothedLandmarksRef.current = null;
+
+    // Reset adaptive FPS state
+    detectionDurationsRef.current = [];
+    currentFpsRef.current = maxFps;
+    frameTimeThresholdRef.current = 1000 / maxFps;
+
     setDetectionResult(null);
     setError(null);
-  }, []);
+  }, [maxFps]);
 
   return {
     isReady,
