@@ -62,8 +62,8 @@ export function usePoseDetection({
   onPlankDetected,
   onPlankLost,
   enableDetection = true,
-  stabilityFrames = 5,
-  gracePeriodFrames = 10,
+  stabilityFrames = 15, // Increased from 5: need ~1.5 seconds of stable plank to start
+  gracePeriodFrames = 50, // Increased from 10: give ~5 seconds grace before stopping
   adaptiveFps = true,
   minFps = 5,
   maxFps = 15,

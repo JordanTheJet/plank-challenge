@@ -141,8 +141,8 @@ function VideoRecorder({ targetDuration, onComplete, onError, detectionMode = fa
     enableDetection: detectionMode,
     onPlankDetected: handlePlankDetected,
     onPlankLost: handlePlankLost,
-    stabilityFrames: 5,
-    gracePeriodFrames: 30, // ~3 seconds at 10 FPS
+    stabilityFrames: 15, // ~1.5 seconds at 10 FPS - prevents false starts
+    gracePeriodFrames: 50, // ~5 seconds at 10 FPS - allows minor form breaks
   });
 
   // Initialize camera and setup canvas
