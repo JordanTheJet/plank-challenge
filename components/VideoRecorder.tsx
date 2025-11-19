@@ -273,20 +273,13 @@ function VideoRecorder({ targetDuration, onComplete, onError, detectionMode = fa
     canvas.width = video.videoWidth || 1280;
     canvas.height = video.videoHeight || 720;
 
-    // Start timer when entering detecting phase (for detection mode)
-    if (phase === 'detecting' && detectionMode && !startTimeRef.current) {
-      startTimeRef.current = Date.now();
-    }
-
     // Start recording if in recording phase
     if (phase === 'recording') {
       const canvasStream = canvas.captureStream(30); // 30 FPS
       recorderRef.current = new Recorder();
       recorderRef.current.start(canvasStream);
-      // Set start time if not already set (happens in detection mode when transitioning from detecting to recording)
-      if (!startTimeRef.current) {
-        startTimeRef.current = Date.now();
-      }
+      // Reset and start timer when recording begins (for both manual and detection modes)
+      startTimeRef.current = Date.now();
     }
 
     // Cancel any existing animation frame before starting new one
@@ -322,27 +315,29 @@ function VideoRecorder({ targetDuration, onComplete, onError, detectionMode = fa
         drawDetectionFeedback(ctx, detectionResult, canvas.width, canvas.height);
       }
 
-      // During recording (or detecting in detection mode), draw timer overlay
-      if (phase === 'recording' || (phase === 'detecting' && detectionMode)) {
+      // During recording, draw timer overlay and update elapsed time
+      if (phase === 'recording') {
         // Calculate elapsed time
         let elapsed = 0;
         if (startTimeRef.current) {
           elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
         }
-        setElapsedTime(elapsed);
 
-        // Draw timer overlay (use memoized function) - only during recording, not detecting
-        if (phase === 'recording') {
-          drawTimerOverlayMemoized(ctx, canvas.width, canvas.height, elapsed, targetDuration);
+        // Only update state if elapsed time has actually changed (prevent infinite re-renders)
+        if (elapsed !== elapsedTime) {
+          setElapsedTime(elapsed);
+        }
 
-          // Check if target duration reached (capture final frame at exact target)
-          if (elapsed >= targetDuration && !detectionMode) {
-            // Only auto-stop for manual mode; detection mode stops when plank lost
-            const finalFrame = canvas.toDataURL('image/png');
-            setFinalFrameData(finalFrame);
-            stopRecording();
-            return;
-          }
+        // Draw timer overlay (use memoized function)
+        drawTimerOverlayMemoized(ctx, canvas.width, canvas.height, elapsed, targetDuration);
+
+        // Check if target duration reached (capture final frame at exact target)
+        if (elapsed >= targetDuration && !detectionMode) {
+          // Only auto-stop for manual mode; detection mode stops when plank lost
+          const finalFrame = canvas.toDataURL('image/png');
+          setFinalFrameData(finalFrame);
+          stopRecording();
+          return;
         }
       }
 
@@ -375,7 +370,7 @@ function VideoRecorder({ targetDuration, onComplete, onError, detectionMode = fa
         ctx.clearRect(0, 0, canvas.width, canvas.height);
       }
     };
-  }, [phase, targetDuration, detectionMode, detectionResult]);
+  }, [phase, targetDuration, detectionMode, detectionResult, elapsedTime]);
 
 
   const stopRecording = useCallback(async () => {
