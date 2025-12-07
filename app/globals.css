@@ -4,9 +4,6 @@
    NEON BURN - High-Energy Athletic Theme
    ============================================ */
 
-/* Custom Fonts via Google Fonts */
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Outfit:wght@300;400;500;600;700;800&display=swap');
-
 :root {
   /* Core Colors */
   --bg-primary: #0a0a0f;
