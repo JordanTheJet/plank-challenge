@@ -1,13 +1,10 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter } from 'next/font/google'
 import './globals.css'
 
-const inter = Inter({ subsets: ['latin'] })
-
 export const metadata: Metadata = {
-  title: 'Plank Challenge - Daily Plank Challenge',
-  description: 'Track your daily plank progress with video recording and timer overlay. Starting Nov 17, 2025: 30 seconds on Day 1, +6 seconds daily.',
-  keywords: ['plank', 'timer', 'exercise', 'fitness', 'challenge', 'workout'],
+  title: 'PLANK CHALLENGE - 30 Day Fitness Challenge',
+  description: 'Crush your 30-day plank challenge with video recording, AI pose detection, and timer overlay. Track your progress and compete with friends!',
+  keywords: ['plank', 'timer', 'exercise', 'fitness', 'challenge', 'workout', '30 day challenge'],
   authors: [{ name: 'Plank Challenge' }],
   manifest: '/manifest.json',
 }
@@ -17,7 +14,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: '#9333ea',
+  themeColor: '#0a0a0f',
 }
 
 export default function RootLayout({
@@ -30,13 +27,16 @@ export default function RootLayout({
       <head>
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="Plank Challenge" />
+        <meta name="apple-mobile-web-app-title" content="PLANK" />
         <link rel="dns-prefetch" href="https://cdn.jsdelivr.net" />
         <link rel="dns-prefetch" href="https://storage.googleapis.com" />
+        <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://cdn.jsdelivr.net" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://storage.googleapis.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
-      <body className={inter.className}>
+      <body className="font-body">
         {children}
       </body>
     </html>
