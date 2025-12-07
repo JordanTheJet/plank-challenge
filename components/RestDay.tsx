@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { getNextChallenge } from '@/utils/timerLogic';
 import Link from 'next/link';
@@ -14,7 +15,11 @@ const RECOVERY_TIPS = [
 
 export default function RestDay() {
   const nextChallenge = getNextChallenge();
-  const randomTip = RECOVERY_TIPS[Math.floor(Math.random() * RECOVERY_TIPS.length)];
+  const [randomTip, setRandomTip] = useState(RECOVERY_TIPS[0]);
+
+  useEffect(() => {
+    setRandomTip(RECOVERY_TIPS[Math.floor(Math.random() * RECOVERY_TIPS.length)]);
+  }, []);
 
   return (
     <div className="min-h-screen-safe bg-[var(--bg-primary)] bg-grid-pattern relative overflow-hidden flex items-center justify-center">

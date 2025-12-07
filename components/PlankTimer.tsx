@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { calculateTargetDuration, getDayNumber, formatDuration } from '@/utils/timerLogic';
 import { preloadPoseLandmarker } from '@/lib/mediapipeLoader';
 import VideoRecorder from './VideoRecorder';
@@ -36,10 +36,11 @@ export default function PlankTimer() {
   // Memoize calculations
   const targetDuration = useMemo(() => calculateTargetDuration(), []);
   const dayNumber = useMemo(() => getDayNumber(), []);
-  const motivationPhrase = useMemo(
-    () => MOTIVATION_PHRASES[Math.floor(Math.random() * MOTIVATION_PHRASES.length)],
-    []
-  );
+  const [motivationPhrase, setMotivationPhrase] = useState(MOTIVATION_PHRASES[0]);
+
+  useEffect(() => {
+    setMotivationPhrase(MOTIVATION_PHRASES[Math.floor(Math.random() * MOTIVATION_PHRASES.length)]);
+  }, []);
 
   // If it's a rest day (Sunday), show rest day component
   if (targetDuration === null) {
